@@ -1,25 +1,31 @@
 import type { StyleSpecification } from '@maplibre/maplibre-react-native';
 
-// Free dark basemap: CARTO "dark_all" raster tiles built on OpenStreetMap data. No API key or account.
+// Free basemap: standard OpenStreetMap tiles, no API key. (CARTO's dark tiles now demand a key.)
+// The raster paint below darkens them to suit the radar theme.
 export const MAP_STYLE: StyleSpecification = {
   version: 8,
   sources: {
     basemap: {
       type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-      ],
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
       maxzoom: 18,
-      attribution: '© OpenStreetMap contributors © CARTO',
+      attribution: '© OpenStreetMap contributors',
     },
   },
   layers: [
     { id: 'background', type: 'background', paint: { 'background-color': '#030704' } },
-    { id: 'basemap', type: 'raster', source: 'basemap' },
+    {
+      id: 'basemap',
+      type: 'raster',
+      source: 'basemap',
+      paint: {
+        'raster-brightness-max': 0.36,
+        'raster-saturation': -0.7,
+        'raster-contrast': 0.25,
+      },
+    },
   ],
 };
 
-export const START_ZOOM = 7.7; // roughly the 35 NM radar circle across the screen
+export const START_ZOOM = 8.4; // 35 NM radar circle roughly fills the screen width

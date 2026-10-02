@@ -23,5 +23,5 @@ Every push to `main` (or a manual run) builds an unsigned iOS IPA (`macos-latest
 Sideloadly; install the APK directly.
 
 ## Maps
-Both platforms use MapLibre (`@maplibre/maplibre-react-native`) with free CARTO dark tiles (OpenStreetMap data).
+Both platforms use MapLibre (`@maplibre/maplibre-react-native`) with free OpenStreetMap tiles, darkened in-app.
 No API keys, accounts or billing. Needs a dev build (not Expo Go).
