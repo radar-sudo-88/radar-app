@@ -14,6 +14,7 @@ concurrency:
 
 env:
   EXPO_PUBLIC_API_BASE: https://aero-sentry.co.uk
+  EXPO_PUBLIC_MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
 
 jobs:
   ios:
