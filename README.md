@@ -1,7 +1,7 @@
 # Aero Sentry (React Native / Expo)
 
 Native iPhone/Android client for the live ADS-B radar. It talks to the same self-hosted backend as the web app
-(`cors-proxy/server.js`): `/v2/point/...` for the feed and `/api/aircraft-info` for the Gemini aircraft profile
+(`cors-proxy/server.js` in radar-sudo-88/radar): `/v2/point/...` for the feed and `/api/aircraft-info` for the Gemini aircraft profile
 (the Gemini key stays on the server). Default backend is `https://aero-sentry.co.uk`; override with
 `EXPO_PUBLIC_API_BASE`.
 
@@ -13,7 +13,6 @@ Native iPhone/Android client for the live ADS-B radar. It talks to the same self
 
 ## Run
 ```sh
-cd mobile
 npm install
 npx expo start        # dev server (map works in Expo Go)
 ```
