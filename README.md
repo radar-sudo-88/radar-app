@@ -17,11 +17,10 @@ npm install
 npx expo start        # dev server (map works in Expo Go)
 ```
 
-## iOS build without a Mac
-`codemagic.yaml` builds an unsigned IPA on Codemagic and, if a `GITHUB_TOKEN` variable group named
-`github` exists, attaches it to a GitHub Release for sideloading with Sideloadly.
+## Builds (GitHub Actions)
+Every push to `main` (or a manual run) builds an unsigned iOS IPA (`macos-latest`) and an installable Android APK
+(`ubuntu-latest`) and attaches both to a GitHub Release. No secrets or variable groups needed. Sideload the IPA with
+Sideloadly; install the APK directly.
 
 ## Android
-Same codebase. No API keys: Android renders free CARTO dark tiles (OpenStreetMap data) via `UrlTile`, iOS uses Apple Maps.
-The `aero-sentry-android` Codemagic workflow builds an installable APK (debug-keystore signed) and attaches it to a
-GitHub Release when `GITHUB_TOKEN` is set in the `github` variable group.
+Same codebase. No API keys: Android renders free CARTO dark tiles (OpenStreetMap data) via `UrlTile`; iOS uses Apple Maps.
