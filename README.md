@@ -22,6 +22,6 @@ npx expo start        # dev server (map works in Expo Go)
 `github` exists, attaches it to a GitHub Release for sideloading with Sideloadly.
 
 ## Android
-Same codebase. Android uses Google Maps, so set `GOOGLE_MAPS_API_KEY` (Maps SDK for Android enabled) in the build
-environment — `app.config.js` injects it. The `aero-sentry-android` Codemagic workflow builds an installable APK
-(debug-keystore signed) and attaches it to a GitHub Release when `GITHUB_TOKEN` is set in the `android` variable group.
+Same codebase. No API keys: Android renders free CARTO dark tiles (OpenStreetMap data) via `UrlTile`, iOS uses Apple Maps.
+The `aero-sentry-android` Codemagic workflow builds an installable APK (debug-keystore signed) and attaches it to a
+GitHub Release when `GITHUB_TOKEN` is set in the `github` variable group.

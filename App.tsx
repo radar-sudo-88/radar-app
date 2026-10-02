@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Circle, Marker, UrlTile } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -18,7 +18,6 @@ import { DEFAULT_SETTINGS, loadSettings, loadStation, saveSettings, saveStation 
 import { describeSquawk, isEmergencySquawk } from './src/lib/squawk';
 import { useRadar } from './src/lib/useRadar';
 import { fmtAlt, fmtDist, fmtSpeed } from './src/lib/units';
-import { DARK_MAP_STYLE } from './src/mapStyle';
 import { ALERT, ALT_BANDS, AMBER, THEMES } from './src/theme';
 import { Settings, Station } from './src/types';
 
@@ -130,15 +129,16 @@ function Radar() {
         ref={map}
         style={StyleSheet.absoluteFill}
         initialRegion={{ latitude: station.lat, longitude: station.lon, latitudeDelta: 1.35, longitudeDelta: 1.35 }}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
+        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'none'}
         userInterfaceStyle="dark"
-        customMapStyle={Platform.OS === 'android' ? DARK_MAP_STYLE : undefined}
         showsCompass={false}
         showsPointsOfInterests={false}
         pitchEnabled={false}
         onPress={() => setSelectedHex(null)}
       >
+        {Platform.OS === 'android' && (
+          <UrlTile urlTemplate="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" maximumZ={18} flipY={false} zIndex={-1} />
+        )}
         {[0.25, 0.5, 0.75, 1].map((f) => (
           <Circle key={f} center={{ latitude: station.lat, longitude: station.lon }} radius={RADIUS_NM * NM_M * f} strokeColor={`${theme.accent}${f === 1 ? '88' : '33'}`} strokeWidth={1} />
         ))}
@@ -158,6 +158,10 @@ function Radar() {
           />
         ))}
       </MapView>
+
+      {Platform.OS === 'android' && (
+        <Text pointerEvents="none" style={[s.attr, { bottom: insets.bottom + 2, color: theme.dim }]}>© OpenStreetMap contributors © CARTO</Text>
+      )}
 
       <View pointerEvents="box-none" style={[s.top, { paddingTop: insets.top + 8 }]}>
         <View style={[s.pill, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -254,5 +258,6 @@ const s = StyleSheet.create({
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12 },
   nearest: { borderWidth: 1, borderRadius: 16, padding: 14 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  attr: { position: 'absolute', right: 6, fontSize: 9 },
   station: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
 });
