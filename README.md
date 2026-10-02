@@ -23,4 +23,5 @@ Every push to `main` (or a manual run) builds an unsigned iOS IPA (`macos-latest
 Sideloadly; install the APK directly.
 
 ## Android
-Same codebase. No API keys: Android renders free CARTO dark tiles (OpenStreetMap data) via `UrlTile`; iOS uses Apple Maps.
+Same codebase. Android uses Google Maps: add a repo secret `GOOGLE_MAPS_API_KEY` (Maps SDK for Android enabled)
+under Settings > Secrets and variables > Actions. iOS uses Apple Maps and needs no key.

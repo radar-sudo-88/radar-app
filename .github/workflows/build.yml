@@ -74,6 +74,8 @@ jobs:
           java-version: 17
       - run: npm ci --no-audit --no-fund
       - name: Generate native Android project
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: npx expo prebuild --platform android --no-install
       - name: Build release APK (debug-keystore signed, installable)
         run: |
