@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import MapView, { Circle, Marker, UrlTile } from 'react-native-maps';
+import MapView, { Circle, Marker, Polyline, UrlTile } from 'react-native-maps';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -39,6 +39,7 @@ function Radar() {
   const snapshot = useRef<Row | null>(null);
   const map = useRef<MapView>(null);
   const alerted = useRef(new Set<string>());
+  const lastPick = useRef(0);
   const theme = THEMES[settings.theme];
 
   useEffect(() => {
@@ -93,6 +94,7 @@ function Radar() {
   const updateSettings = useCallback((s: Settings) => { setSettings(s); saveSettings(s); }, []);
 
   const pick = useCallback((hex: string) => {
+    lastPick.current = Date.now();
     setSelectedHex(hex);
     Haptics.selectionAsync().catch(() => {});
   }, []);
@@ -134,7 +136,11 @@ function Radar() {
         showsCompass={false}
         showsPointsOfInterests={false}
         pitchEnabled={false}
-        onPress={() => setSelectedHex(null)}
+        onPress={(e) => {
+          // Taps on a plane marker can also reach the map on some platforms; ignore those.
+          if ((e.nativeEvent as any)?.action === 'marker-press' || Date.now() - lastPick.current < 600) return;
+          setSelectedHex(null);
+        }}
       >
         {Platform.OS === 'android' && (
           <UrlTile urlTemplate="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" maximumZ={18} flipY={false} zIndex={-1} />
@@ -145,6 +151,14 @@ function Radar() {
         <Marker coordinate={{ latitude: station.lat, longitude: station.lon }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
           <View style={[s.station, { borderColor: theme.accent, backgroundColor: theme.bg }]} />
         </Marker>
+        {nearest && (
+          <Polyline
+            coordinates={[{ latitude: station.lat, longitude: station.lon }, { latitude: nearest.lat as number, longitude: nearest.lon as number }]}
+            strokeColor={theme.accent}
+            strokeWidth={2}
+            lineDashPattern={[8, 8]}
+          />
+        )}
         {rows.map((r) => (
           <PlaneMarker
             key={r.hex}
@@ -152,6 +166,9 @@ function Radar() {
             lat={r.lat as number}
             lon={r.lon as number}
             heading={r.track ?? 0}
+            label={(r.flight || '').trim() || r.r || r.hex.toUpperCase()}
+            nearest={r.hex === nearest?.hex}
+            accent={theme.accent}
             color={isEmergencySquawk(r.squawk) || r.squawk === '7777' ? ALERT : r.mil ? AMBER : r.color}
             selected={r.hex === selectedHex}
             onPress={pick}
