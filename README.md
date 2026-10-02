@@ -22,6 +22,6 @@ Every push to `main` (or a manual run) builds an unsigned iOS IPA (`macos-latest
 (`ubuntu-latest`) and attaches both to a GitHub Release. No secrets or variable groups needed. Sideload the IPA with
 Sideloadly; install the APK directly.
 
-## Android
-Same codebase. Android uses Google Maps: add a repo secret `GOOGLE_MAPS_API_KEY` (Maps SDK for Android enabled)
-under Settings > Secrets and variables > Actions. iOS uses Apple Maps and needs no key.
+## Maps
+Both platforms use MapLibre (`@maplibre/maplibre-react-native`) with free CARTO dark tiles (OpenStreetMap data).
+No API keys, accounts or billing. Needs a dev build (not Expo Go).

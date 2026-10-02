@@ -1,6 +1,6 @@
-import React, { memo, useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
-import { Marker } from 'react-native-maps';
+import React, { memo } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import { Marker } from '@maplibre/maplibre-react-native';
 import Svg, { Path } from 'react-native-svg';
 
 interface Props {
@@ -21,32 +21,21 @@ const PLANE = 'M12 1.5 L13.7 8.6 L22 13.4 L22 15.6 L13.9 13 L13.5 19 L16 20.8 L1
 
 const W = 96;
 const ICON = 44;
-const H = ICON + 22;
+const LABEL_H = 22;
+const H = ICON + LABEL_H;
 
 function PlaneMarkerBase({ hex, lat, lon, heading, color, label, selected, nearest, accent, onPress }: Props) {
-  const hdg = Math.round(heading / 5) * 5; // coarse so the marker re-renders less often
-  // Custom marker views are only re-rasterised while tracksViewChanges is on, so turn it on
-  // briefly after anything visual changes, then off again for performance.
-  const [track, setTrack] = useState(true);
-  useEffect(() => {
-    setTrack(true);
-    const t = setTimeout(() => setTrack(false), 500);
-    return () => clearTimeout(t);
-  }, [color, selected, nearest, hdg, label, accent]);
-
+  const hdg = Math.round(heading / 5) * 5;
   const size = selected ? 34 : nearest ? 30 : 24;
   return (
     <Marker
-      coordinate={{ latitude: lat, longitude: lon }}
-      anchor={{ x: 0.5, y: ICON / 2 / H }}
-      tracksViewChanges={track}
-      onPress={(e) => {
-        e.stopPropagation?.();
-        onPress(hex);
-      }}
-      zIndex={selected ? 30 : nearest ? 20 : 1}
+      id={`ac-${hex}`}
+      lngLat={[lon, lat]}
+      anchor="center"
+      // The view is ICON + label tall; shift it so the plane icon (not the whole view) sits on the coordinate.
+      offset={[0, LABEL_H / 2]}
     >
-      <View style={{ width: W, height: H, alignItems: 'center' }}>
+      <Pressable onPress={() => onPress(hex)} hitSlop={8} style={{ width: W, height: H, alignItems: 'center' }}>
         <View
           style={{
             width: ICON,
@@ -74,14 +63,11 @@ function PlaneMarkerBase({ hex, lat, lon, heading, color, label, selected, neare
             backgroundColor: nearest ? accent : 'rgba(0,0,0,0.65)',
           }}
         >
-          <Text
-            numberOfLines={1}
-            style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.4, color: nearest ? '#050505' : color }}
-          >
+          <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.4, color: nearest ? '#050505' : color }}>
             {nearest ? `◉ ${label}` : label}
           </Text>
         </View>
-      </View>
+      </Pressable>
     </Marker>
   );
 }

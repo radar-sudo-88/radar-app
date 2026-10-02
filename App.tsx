@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import MapView, { Circle, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Camera, CameraRef, GeoJSONSource, Layer, Map, Marker } from '@maplibre/maplibre-react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -18,11 +18,10 @@ import { DEFAULT_SETTINGS, loadSettings, loadStation, saveSettings, saveStation 
 import { describeSquawk, isEmergencySquawk } from './src/lib/squawk';
 import { useRadar } from './src/lib/useRadar';
 import { fmtAlt, fmtDist, fmtSpeed } from './src/lib/units';
-import { DARK_MAP_STYLE } from './src/mapStyle';
+import { circleCoords } from './src/lib/geo';
+import { MAP_STYLE, START_ZOOM } from './src/mapStyle';
 import { ALERT, ALT_BANDS, AMBER, THEMES } from './src/theme';
 import { Settings, Station } from './src/types';
-
-const NM_M = 1852;
 
 interface Banner { key: string; text: string; color: string; hex: string }
 
@@ -38,9 +37,8 @@ function Radar() {
   const [selectedHex, setSelectedHex] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
   const snapshot = useRef<Row | null>(null);
-  const map = useRef<MapView>(null);
+  const camera = useRef<CameraRef>(null);
   const alerted = useRef(new Set<string>());
-  const lastPick = useRef(0);
   const theme = THEMES[settings.theme];
 
   useEffect(() => {
@@ -60,6 +58,35 @@ function Radar() {
   if (selected) snapshot.current = selected;
   const sheetRow = selectedHex ? selected ?? (snapshot.current?.hex === selectedHex ? snapshot.current : null) : null;
   const nearest = rows[0];
+
+  const ringsGeoJSON = useMemo(
+    () => ({
+      type: 'FeatureCollection' as const,
+      features: station
+        ? [0.25, 0.5, 0.75, 1].map((f) => ({
+            type: 'Feature' as const,
+            properties: { outer: f === 1 },
+            geometry: { type: 'LineString' as const, coordinates: circleCoords(station.lat, station.lon, RADIUS_NM * f) },
+          }))
+        : [],
+    }),
+    [station],
+  );
+  const nearestLineGeoJSON = useMemo(
+    () => ({
+      type: 'FeatureCollection' as const,
+      features:
+        station && nearest
+          ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: [[station.lon, station.lat], [nearest.lon as number, nearest.lat as number]] } }]
+          : [],
+    }),
+    [station, nearest?.lat, nearest?.lon], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // Draw the selected and nearest aircraft last so they sit on top.
+  const drawRows = useMemo(
+    () => [...rows].sort((a, b) => Number(a.hex === selectedHex || a.hex === nearest?.hex) - Number(b.hex === selectedHex || b.hex === nearest?.hex)),
+    [rows, selectedHex, nearest?.hex], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Alerts: emergency squawks, nearby military and rare aircraft - once per aircraft per kind.
   useEffect(() => {
@@ -95,13 +122,12 @@ function Radar() {
   const updateSettings = useCallback((s: Settings) => { setSettings(s); saveSettings(s); }, []);
 
   const pick = useCallback((hex: string) => {
-    lastPick.current = Date.now();
     setSelectedHex(hex);
     Haptics.selectionAsync().catch(() => {});
   }, []);
 
   const recenter = useCallback((st: Station) => {
-    map.current?.animateToRegion({ latitude: st.lat, longitude: st.lon, latitudeDelta: 1.35, longitudeDelta: 1.35 }, 500);
+    camera.current?.easeTo({ center: [st.lon, st.lat], zoom: START_ZOOM, duration: 500 });
   }, []);
 
   const confirmStation = (s: Station) => {
@@ -128,38 +154,34 @@ function Radar() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar style="light" />
-      <MapView
-        ref={map}
+      <Map
         style={StyleSheet.absoluteFill}
-        initialRegion={{ latitude: station.lat, longitude: station.lon, latitudeDelta: 1.35, longitudeDelta: 1.35 }}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
-        customMapStyle={Platform.OS === 'android' ? DARK_MAP_STYLE : undefined}
-        userInterfaceStyle="dark"
-        showsCompass={false}
-        showsPointsOfInterests={false}
-        pitchEnabled={false}
-        onPress={(e) => {
-          // Taps on a plane marker can also reach the map on some platforms; ignore those.
-          if ((e.nativeEvent as any)?.action === 'marker-press' || Date.now() - lastPick.current < 600) return;
-          setSelectedHex(null);
-        }}
+        mapStyle={MAP_STYLE}
+        compass={false}
+        logo={false}
+        attributionPosition={{ bottom: insets.bottom + 2, right: 6 }}
+        touchPitch={false}
+        onPress={() => setSelectedHex(null)}
       >
-        {[0.25, 0.5, 0.75, 1].map((f) => (
-          <Circle key={f} center={{ latitude: station.lat, longitude: station.lon }} radius={RADIUS_NM * NM_M * f} strokeColor={`${theme.accent}${f === 1 ? '88' : '33'}`} strokeWidth={1} />
-        ))}
-        <Marker coordinate={{ latitude: station.lat, longitude: station.lon }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+        <Camera ref={camera} initialViewState={{ center: [station.lon, station.lat], zoom: START_ZOOM }} maxZoom={14} />
+        <GeoJSONSource id="rings" data={ringsGeoJSON}>
+          <Layer
+            id="rings-line"
+            type="line"
+            paint={{
+              'line-color': theme.accent,
+              'line-width': 1,
+              'line-opacity': ['case', ['get', 'outer'], 0.55, 0.22],
+            }}
+          />
+        </GeoJSONSource>
+        <GeoJSONSource id="nearest-line" data={nearestLineGeoJSON}>
+          <Layer id="nearest-line-layer" type="line" paint={{ 'line-color': theme.accent, 'line-width': 2, 'line-dasharray': [3, 3] }} />
+        </GeoJSONSource>
+        <Marker id="station" lngLat={[station.lon, station.lat]} anchor="center">
           <View style={[s.station, { borderColor: theme.accent, backgroundColor: theme.bg }]} />
         </Marker>
-        {nearest && (
-          <Polyline
-            coordinates={[{ latitude: station.lat, longitude: station.lon }, { latitude: nearest.lat as number, longitude: nearest.lon as number }]}
-            strokeColor={theme.accent}
-            strokeWidth={2}
-            lineDashPattern={[8, 8]}
-          />
-        )}
-        {rows.map((r) => (
+        {drawRows.map((r) => (
           <PlaneMarker
             key={r.hex}
             hex={r.hex}
@@ -174,7 +196,7 @@ function Radar() {
             onPress={pick}
           />
         ))}
-      </MapView>
+      </Map>
 
       <View pointerEvents="box-none" style={[s.top, { paddingTop: insets.top + 8 }]}>
         <View style={[s.pill, { backgroundColor: theme.card, borderColor: theme.border }]}>
