@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Aero Sentry",
+    "slug": "aero-sentry",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#030704",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.xrayxj.aerosentry",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.xrayxj.aerosentry",
+      "adaptiveIcon": {
+        "backgroundColor": "#030704",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    }
+  }
+}
