@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Marker } from '@maplibre/maplibre-react-native';
+import { MarkerView } from '@maplibre/maplibre-react-native';
 import Svg, { Path } from 'react-native-svg';
 
 interface Props {
@@ -28,12 +28,12 @@ function PlaneMarkerBase({ hex, lat, lon, heading, color, label, selected, neare
   const hdg = Math.round(heading / 5) * 5;
   const size = selected ? 34 : nearest ? 30 : 24;
   return (
-    <Marker
+    <MarkerView
       id={`ac-${hex}`}
-      lngLat={[lon, lat]}
-      anchor="center"
-      // The view is ICON + label tall; shift it so the plane icon (not the whole view) sits on the coordinate.
-      offset={[0, LABEL_H / 2]}
+      coordinate={[lon, lat]}
+      // The view is ICON + label tall; anchor on the plane icon's centre (not the view's centre) so it sits on the coordinate.
+      anchor={{ x: 0.5, y: ICON / 2 / H }}
+      allowOverlap
     >
       <Pressable onPress={() => onPress(hex)} hitSlop={8} style={{ width: W, height: H, alignItems: 'center' }}>
         <View
@@ -68,7 +68,7 @@ function PlaneMarkerBase({ hex, lat, lon, heading, color, label, selected, neare
           </Text>
         </View>
       </Pressable>
-    </Marker>
+    </MarkerView>
   );
 }
 

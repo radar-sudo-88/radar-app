@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Camera, CameraRef, GeoJSONSource, Layer, Map, Marker, RasterSource } from '@maplibre/maplibre-react-native';
+import { Camera, LineLayer, MapView, MarkerView, RasterLayer, RasterSource, ShapeSource } from '@maplibre/maplibre-react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -49,7 +49,9 @@ function Radar() {
   const [selectedHex, setSelectedHex] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
   const snapshot = useRef<Row | null>(null);
-  const camera = useRef<CameraRef>(null);
+  const camera = useRef<React.ElementRef<typeof Camera>>(null);
+  const easeTo = (center: [number, number], duration: number, zoom?: number) =>
+    camera.current?.setCamera({ centerCoordinate: center, ...(zoom !== undefined ? { zoomLevel: zoom } : {}), animationDuration: duration, animationMode: 'easeTo' });
   const alerted = useRef(new Set<string>());
   const theme = THEMES[settings.theme];
 
@@ -88,7 +90,7 @@ function Radar() {
     const live = allRows.find((r) => r.hex === followHex);
     if (live) {
       followLostAt.current = 0;
-      camera.current?.easeTo({ center: [live.lon as number, live.lat as number], duration: 1500 });
+      easeTo([live.lon as number, live.lat as number], 1500);
     } else {
       if (!followLostAt.current) followLostAt.current = Date.now();
       if (Date.now() - followLostAt.current > 60000) stopFollow();
@@ -167,11 +169,11 @@ function Radar() {
   const stopFollow = () => {
     setFollowHex(null);
     followLostAt.current = 0;
-    if (station) camera.current?.easeTo({ center: [station.lon, station.lat], zoom: START_ZOOM, duration: 500 });
+    if (station) easeTo([station.lon, station.lat], 500, START_ZOOM);
   };
 
   const recenter = useCallback((st: Station) => {
-    camera.current?.easeTo({ center: [st.lon, st.lat], zoom: START_ZOOM, duration: 500 });
+    easeTo([st.lon, st.lat], 500, START_ZOOM);
   }, []);
 
   const confirmStation = (s: Station) => {
@@ -236,45 +238,44 @@ function Radar() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar style="light" />
-      <Map
+      <MapView
         style={StyleSheet.absoluteFill}
-        mapStyle={MAP_STYLE}
-        compass={false}
-        logo={false}
+        {...(typeof MAP_STYLE === 'string' ? { styleURL: MAP_STYLE } : { styleJSON: JSON.stringify(MAP_STYLE) })}
+        compassEnabled={false}
+        logoEnabled={false}
         attributionPosition={{ bottom: insets.bottom + 2, right: 6 }}
-        touchPitch={false}
+        pitchEnabled={false}
         onPress={() => setSelectedHex(null)}
       >
-        <Camera ref={camera} initialViewState={{ center: [station.lon, station.lat], zoom: START_ZOOM }} maxZoom={14} />
+        <Camera ref={camera} defaultSettings={{ centerCoordinate: [station.lon, station.lat], zoomLevel: START_ZOOM }} maxZoomLevel={14} />
         {weatherTiles && (
-          <RasterSource id="weather" tiles={[weatherTiles]} tileSize={256} maxzoom={7}>
-            <Layer id="weather-layer" type="raster" paint={{ 'raster-opacity': 0.4 }} />
+          <RasterSource id="weather" tileUrlTemplates={[weatherTiles]} tileSize={256} maxZoomLevel={7}>
+            <RasterLayer id="weather-layer" style={{ rasterOpacity: 0.4 }} />
           </RasterSource>
         )}
-        <GeoJSONSource id="rings" data={ringsGeoJSON}>
-          <Layer
+        <ShapeSource id="rings" shape={ringsGeoJSON}>
+          <LineLayer
             id="rings-line"
-            type="line"
-            paint={{
-              'line-color': theme.accent,
-              'line-width': 1,
-              'line-opacity': ['case', ['get', 'outer'], 0.55, 0.22],
+            style={{
+              lineColor: theme.accent,
+              lineWidth: 1,
+              lineOpacity: ['case', ['get', 'outer'], 0.55, 0.22],
             }}
           />
-        </GeoJSONSource>
-        <GeoJSONSource id="nearest-line" data={nearestLineGeoJSON}>
-          <Layer id="nearest-line-layer" type="line" paint={{ 'line-color': theme.accent, 'line-width': 2, 'line-dasharray': [3, 3] }} />
-        </GeoJSONSource>
-        <Marker id="station" lngLat={[station.lon, station.lat]} anchor="center">
+        </ShapeSource>
+        <ShapeSource id="nearest-line" shape={nearestLineGeoJSON}>
+          <LineLayer id="nearest-line-layer" style={{ lineColor: theme.accent, lineWidth: 2, lineDasharray: [3, 3] }} />
+        </ShapeSource>
+        <MarkerView id="station" coordinate={[station.lon, station.lat]} anchor={{ x: 0.5, y: 0.5 }}>
           <View style={[s.station, { borderColor: theme.accent, backgroundColor: theme.bg }]} />
-        </Marker>
+        </MarkerView>
         {airports.map((a) => (
-          <Marker key={a.code} id={`apt-${a.code}`} lngLat={[a.lon, a.lat]} anchor="center">
+          <MarkerView key={a.code} id={`apt-${a.code}`} coordinate={[a.lon, a.lat]} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={{ alignItems: 'center' }} pointerEvents="none">
               <Text style={{ fontSize: 13 }}>{a.mil ? '✈️' : '🛩️'}</Text>
               <Text style={{ color: a.mil ? AMBER : theme.dim, fontSize: 9, fontWeight: '700' }}>{a.code}</Text>
             </View>
-          </Marker>
+          </MarkerView>
         ))}
         {drawRows.map((r) => (
           <PlaneMarker
@@ -291,7 +292,7 @@ function Radar() {
             onPress={pick}
           />
         ))}
-      </Map>
+      </MapView>
 
       <View pointerEvents="box-none" style={[s.top, { paddingTop: insets.top + 8 }]}>
         <View style={[s.pill, { backgroundColor: theme.card, borderColor: theme.border }]}>

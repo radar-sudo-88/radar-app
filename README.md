@@ -25,3 +25,7 @@ Sideloadly; install the APK directly.
 ## Maps
 Both platforms use MapLibre (`@maplibre/maplibre-react-native`) with free OpenStreetMap tiles, darkened in-app.
 No API keys, accounts or billing. Needs a dev build (not Expo Go).
+
+## Legacy branch (Android 6+)
+
+This branch targets Expo SDK 51 / React Native 0.74 / MapLibre RN 10 with `minSdkVersion 23`, so it runs on Android 6.0 and up. Same features as `main`; only the stack and the map API differ. iOS is not built from here, use `main`.

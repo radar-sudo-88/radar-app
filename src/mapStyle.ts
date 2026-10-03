@@ -1,4 +1,5 @@
-import type { StyleSpecification } from '@maplibre/maplibre-react-native';
+// MapLibre RN 10 takes the style as a JSON string (styleJSON) or a URL (styleURL).
+type StyleSpecification = Record<string, unknown>;
 
 // Free basemap: standard OpenStreetMap tiles, no API key. (CARTO's dark tiles now demand a key.)
 // The raster paint below darkens them to suit the radar theme.

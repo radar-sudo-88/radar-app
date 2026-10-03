@@ -1,15 +1,18 @@
-name: Build
+name: Build (legacy Android 6+)
+
+# Legacy branch: Expo SDK 51 / React Native 0.74 / MapLibre RN 10 so the APK installs on Android 6.0 (API 23) and up.
+# The modern build (Android 7+, iOS) lives on main.
 
 on:
   push:
-    branches: [main]
+    branches: [legacy-android]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-legacy-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -17,79 +20,36 @@ env:
   EXPO_PUBLIC_MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
 
 jobs:
-  ios:
-    name: iOS (unsigned IPA)
-    runs-on: macos-latest
+  android:
+    name: Android 6+ (APK)
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - name: Generate native iOS project
-        run: npx expo prebuild --platform ios --no-install
-      - name: Install pods
-        run: cd ios && pod install
-      - name: Build unsigned archive
-        run: |
-          cd ios
-          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
-          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/App.xcarchive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            archive
-      - name: Package unsigned IPA
-        run: |
-          cd ios/build
-          APP=$(ls -d App.xcarchive/Products/Applications/*.app | head -n 1)
-          rm -rf Payload && mkdir Payload
-          cp -R "$APP" Payload/
-          zip -qr AeroSentry.ipa Payload
-          ls -lh AeroSentry.ipa
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-ipa
-          path: ios/build/AeroSentry.ipa
-
-  android:
-    name: Android (APK)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+          node-version: 20
           cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
       - run: npm ci --no-audit --no-fund
-      - name: Generate native Android project
+      - name: Generate native Android project (minSdk 23)
         run: npx expo prebuild --platform android --no-install
       - name: Build release APK (debug-keystore signed, installable)
         run: |
           cd android
-          ./gradlew assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk ../AeroSentry.apk
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../AeroSentry-legacy.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: AeroSentry.apk
+          name: android-legacy-apk
+          path: AeroSentry-legacy.apk
 
   release:
     name: Publish release
-    needs: [ios, android]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -100,7 +60,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "build-${{ github.run_number }}" dist/AeroSentry.ipa dist/AeroSentry.apk \
+          gh release create "legacy-build-${{ github.run_number }}" dist/AeroSentry-legacy.apk \
             --repo "${{ github.repository }}" \
-            --title "Aero Sentry build ${{ github.run_number }}" \
-            --notes "IPA is unsigned: sideload with Sideloadly. APK installs directly on Android."
+            --title "Aero Sentry legacy build ${{ github.run_number }} (Android 6+)" \
+            --notes "For Android 6.0+ devices. Installs directly; allow installs from unknown sources." \
+            --prerelease

@@ -22,7 +22,6 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -41,7 +40,17 @@
       ]
     },
     "plugins": [
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 23,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34
+          }
+        }
+      ]
     ],
     "scheme": "aerosentry"
   }
