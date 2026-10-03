@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Camera, CameraRef, GeoJSONSource, Layer, Map, Marker, RasterSource } from '@maplibre/maplibre-react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -13,6 +13,8 @@ import { PostcodeScreen } from './src/components/PostcodeScreen';
 import { SettingsModal } from './src/components/SettingsModal';
 import { Tag } from './src/components/ui';
 import { RADIUS_NM } from './src/config';
+import { parseLink } from './src/lib/deeplink';
+import { geocodePostcode } from './src/lib/api';
 import { airportsNear } from './src/lib/airports';
 import { loadDailyLog, pruneOldDailyLogs, recordEntries, saveDailyLog } from './src/lib/dailyLog';
 import { rareLabel } from './src/lib/military';
@@ -42,6 +44,7 @@ function Radar() {
   const [showSummary, setShowSummary] = useState(false);
   const [followHex, setFollowHex] = useState<string | null>(null);
   const followLostAt = useRef(0);
+  const pendingAc = useRef<{ hex: string; until: number } | null>(null);
   const dailyLog = useRef<Awaited<ReturnType<typeof loadDailyLog>> | null>(null);
   const [selectedHex, setSelectedHex] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
@@ -180,6 +183,43 @@ function Radar() {
     alerted.current.clear();
     setTimeout(() => recenter(s), 100);
   };
+
+  // Deep links: web share links (?pc/?ac/?theme/...) and aerosentry:// both land here.
+  const applyLink = useCallback(async (url: string) => {
+    const link = parseLink(url);
+    if (!link) return;
+    if (Object.keys(link.settings).length) {
+      setSettings((prev) => { const n = { ...prev, ...link.settings }; saveSettings(n); return n; });
+    }
+    if (link.pc) {
+      const r = await geocodePostcode(link.pc);
+      if (!('error' in r)) {
+        setStation(r); saveStation(r); setFollowHex(null); alerted.current.clear();
+        setTimeout(() => recenter(r), 100);
+      }
+    }
+    if (link.ac) {
+      pendingAc.current = { hex: link.ac, until: Date.now() + 5 * 60 * 1000 };
+      setEditingLocation(false);
+    }
+  }, [recenter]);
+
+  const linksReady = station !== undefined;
+  useEffect(() => {
+    if (!linksReady) return;
+    Linking.getInitialURL().then((u) => { if (u) applyLink(u); }).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => applyLink(url));
+    return () => sub.remove();
+  }, [linksReady, applyLink]);
+
+  // Select the linked aircraft once it shows up in the feed; give up after 5 minutes.
+  useEffect(() => {
+    const p = pendingAc.current;
+    if (!p) return;
+    const hit = allRows.find((r) => r.hex.toLowerCase() === p.hex);
+    if (hit) { pendingAc.current = null; pick(hit.hex); }
+    else if (Date.now() > p.until) pendingAc.current = null;
+  }, [allRows, pick]);
 
   if (station === undefined) return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
   if (station === null || editingLocation) {
