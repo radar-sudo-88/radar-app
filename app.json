@@ -52,6 +52,11 @@
         }
       ]
     ],
-    "scheme": "aerosentry"
+    "scheme": "aerosentry",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#030704"
+    }
   }
 }
