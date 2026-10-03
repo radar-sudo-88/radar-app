@@ -1,5 +1,5 @@
 import { API_BASE } from '../config';
-import { Aircraft, AircraftInfo, RouteInfo, Station } from '../types';
+import { Aircraft, AircraftInfo, DailyEntry, DailySummary, RouteInfo, Station } from '../types';
 
 async function fetchTimeout(url: string, init: RequestInit = {}, ms = 12000): Promise<Response> {
   const ctl = new AbortController();
@@ -55,6 +55,8 @@ export async function fetchRoute(callsign: string): Promise<RouteInfo | null> {
       toCode: route.destination.iata_code || route.destination.icao_code || '',
       fromName: name(route.origin),
       toName: name(route.destination),
+      toLat: Number.isFinite(Number(route.destination.latitude)) ? Number(route.destination.latitude) : undefined,
+      toLon: Number.isFinite(Number(route.destination.longitude)) ? Number(route.destination.longitude) : undefined,
     };
   } catch {
     return null;
@@ -99,4 +101,69 @@ export async function fetchProfile(ac: Aircraft): Promise<ProfileResult> {
   } catch (e: any) {
     return { status: 'error', message: e?.name === 'AbortError' ? 'Gemini took too long to answer.' : "Couldn't reach the radar server." };
   }
+}
+
+// ---------- Daily AI summary (same POST /api/daily-summary contract as the web app) ----------
+export type SummaryResult =
+  | { ok: true; summary: DailySummary; cached: boolean }
+  | { ok: false; message: string };
+
+const SUMMARY_ERRORS: Record<string, string> = {
+  not_configured: "Daily summaries aren't set up on this server yet.",
+  rate_limited: 'Too many requests just now - wait a minute and try again.',
+  ai_busy: 'Gemini is busy right now. Try again shortly.',
+  ai_timeout: 'Gemini took too long to answer.',
+  daily_limit: 'The daily AI limit has been reached. Try again tomorrow.',
+};
+
+export async function fetchDailySummary(entries: DailyEntry[], force: boolean): Promise<SummaryResult> {
+  try {
+    const res = await fetchTimeout(`${API_BASE}/api/daily-summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ entries, force }),
+    }, 90000);
+    let data: any = null;
+    try { data = await res.json(); } catch { /* non-JSON error page */ }
+    if (res.ok && data?.ok === true) return { ok: true, summary: data.summary || {}, cached: data.cached !== false };
+    return { ok: false, message: SUMMARY_ERRORS[data?.error] || "Couldn't get a summary right now." };
+  } catch (e: any) {
+    return { ok: false, message: e?.name === 'AbortError' ? 'Gemini took too long to answer.' : "Couldn't reach the radar server." };
+  }
+}
+
+// ---------- Aircraft photo (Planespotters) ----------
+const photoCache = new Map<string, string | null>();
+
+export async function fetchPhoto(ac: Aircraft): Promise<string | null> {
+  const reg = (ac.r || '').trim();
+  const type = (ac.t || '').trim();
+  const key = reg || type || ac.hex;
+  if (photoCache.has(key)) return photoCache.get(key) ?? null;
+  const lookup = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetchTimeout(url, { headers: { Accept: 'application/json' } }, 8000);
+      if (!res.ok) return null;
+      return (await res.json())?.photos?.[0]?.thumbnail_large?.src ?? null;
+    } catch { return null; }
+  };
+  let url: string | null = null;
+  if (reg) url = await lookup(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`);
+  if (!url && type) url = await lookup(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(type)}`);
+  photoCache.set(key, url);
+  return url;
+}
+
+// ---------- Airline logo: ICAO prefix of the callsign (e.g. RYR123 -> RYR) ----------
+export function airlineLogoCandidates(flight: string | undefined): string[] {
+  const m = (flight || '').trim().toUpperCase().match(/^([A-Z]{3})\d/);
+  if (!m) return [];
+  const code = m[1];
+  const base = 'https://raw.githubusercontent.com/Jxck-S/airline-logos/main';
+  return [
+    `${base}/custom_logos/${code}.png`,
+    `${base}/flightaware_logos/${code}.png`,
+    `${base}/radarbox_logos/${code}.png`,
+    `https://content.airhex.com/content/logos/airlines_${code}_50_50_s.png?proportions=keep`,
+  ];
 }

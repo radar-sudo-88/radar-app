@@ -2,8 +2,9 @@ import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DEFAULT_SETTINGS } from '../lib/storage';
+import { shareSetup } from '../lib/share';
 import { Theme, THEMES } from '../theme';
-import { Settings, ThemeName } from '../types';
+import { Settings, Station, ThemeName } from '../types';
 import { Seg } from './ui';
 
 interface Props {
@@ -12,9 +13,10 @@ interface Props {
   theme: Theme;
   onChange: (s: Settings) => void;
   onClose: () => void;
+  station: Station | null;
 }
 
-export function SettingsModal({ visible, settings, theme, onChange, onClose }: Props) {
+export function SettingsModal({ visible, settings, theme, onChange, onClose, station }: Props) {
   const insets = useSafeAreaInsets();
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
   const label = { color: theme.text, fontSize: 14 } as const;
@@ -52,6 +54,9 @@ export function SettingsModal({ visible, settings, theme, onChange, onClose }: P
           <Group title="Features" theme={theme}>
             <Toggle title="Rare-aircraft alerts" sub="Haptics and a banner for A380s, Belugas, warbirds and display teams" value={settings.rareAlerts} onChange={(v) => set('rareAlerts', v)} theme={theme} />
             <Toggle title="Military only" sub="Show only military aircraft (emergencies still appear)" value={settings.milOnly} onChange={(v) => set('milOnly', v)} theme={theme} />
+            <Toggle title="Show airports" sub="Mark nearby airports and airbases on the map" value={settings.showAirports} onChange={(v) => set('showAirports', v)} theme={theme} />
+            <Toggle title="Weather radar" sub="Overlay live rain radar on the map" value={settings.showWeather} onChange={(v) => set('showWeather', v)} theme={theme} />
+            <Toggle title="Include my postcode in shared links" sub="Off: shared links open on the viewer's own location" value={settings.shareLocation} onChange={(v) => set('shareLocation', v)} theme={theme} />
           </Group>
 
           <Group title="Filters (comma-separate for several)" theme={theme}>
@@ -61,11 +66,24 @@ export function SettingsModal({ visible, settings, theme, onChange, onClose }: P
             <TextInput style={input} value={settings.filterType} onChangeText={(v) => set('filterType', v)} placeholder="e.g. A320, B738, C130" placeholderTextColor={theme.dim} autoCapitalize="characters" autoCorrect={false} />
             <Text style={[label, { marginBottom: 4, marginTop: 10 }]}>Squawk</Text>
             <TextInput style={input} value={settings.filterSquawk} onChangeText={(v) => set('filterSquawk', v)} placeholder="e.g. 7000, 72" placeholderTextColor={theme.dim} keyboardType="number-pad" />
-            <Pressable onPress={() => onChange({ ...settings, filterOperator: '', filterType: '', filterSquawk: '' })} style={[s.btn, { borderColor: theme.border }]}>
+            <Text style={[label, { marginBottom: 4, marginTop: 10 }]}>Altitude (ft)</Text>
+            <View style={{ flexDirection: 'row' }}>
+              <TextInput style={[input, { flex: 1, marginRight: 8 }]} value={settings.filterAltMin} onChangeText={(v) => set('filterAltMin', v.replace(/[^0-9]/g, ''))} placeholder="Min" placeholderTextColor={theme.dim} keyboardType="number-pad" />
+              <TextInput style={[input, { flex: 1 }]} value={settings.filterAltMax} onChangeText={(v) => set('filterAltMax', v.replace(/[^0-9]/g, ''))} placeholder="Max" placeholderTextColor={theme.dim} keyboardType="number-pad" />
+            </View>
+            <Text style={[label, { marginBottom: 4, marginTop: 10 }]}>Speed (kts)</Text>
+            <View style={{ flexDirection: 'row' }}>
+              <TextInput style={[input, { flex: 1, marginRight: 8 }]} value={settings.filterSpeedMin} onChangeText={(v) => set('filterSpeedMin', v.replace(/[^0-9]/g, ''))} placeholder="Min" placeholderTextColor={theme.dim} keyboardType="number-pad" />
+              <TextInput style={[input, { flex: 1 }]} value={settings.filterSpeedMax} onChangeText={(v) => set('filterSpeedMax', v.replace(/[^0-9]/g, ''))} placeholder="Max" placeholderTextColor={theme.dim} keyboardType="number-pad" />
+            </View>
+            <Pressable onPress={() => onChange({ ...settings, filterOperator: '', filterType: '', filterSquawk: '', filterAltMin: '', filterAltMax: '', filterSpeedMin: '', filterSpeedMax: '' })} style={[s.btn, { borderColor: theme.border }]}>
               <Text style={{ color: theme.text, fontWeight: '600' }}>Clear filters</Text>
             </Pressable>
           </Group>
 
+          <Pressable onPress={() => shareSetup(settings, station)} style={[s.btn, { borderColor: theme.accent }]}>
+            <Text style={{ color: theme.accent, fontWeight: '600' }}>🔗 Share link to this setup</Text>
+          </Pressable>
           <Pressable onPress={() => onChange({ ...DEFAULT_SETTINGS })} style={[s.btn, { borderColor: theme.border }]}>
             <Text style={{ color: theme.text, fontWeight: '600' }}>Reset all settings</Text>
           </Pressable>

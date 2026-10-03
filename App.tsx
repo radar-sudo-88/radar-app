@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Camera, CameraRef, GeoJSONSource, Layer, Map, Marker } from '@maplibre/maplibre-react-native';
+import { Camera, CameraRef, GeoJSONSource, Layer, Map, Marker, RasterSource } from '@maplibre/maplibre-react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
+import { DailySummaryModal } from './src/components/DailySummaryModal';
 import { DetailSheet } from './src/components/DetailSheet';
 import { ListModal } from './src/components/ListModal';
 import { PlaneMarker } from './src/components/PlaneMarker';
@@ -12,7 +13,11 @@ import { PostcodeScreen } from './src/components/PostcodeScreen';
 import { SettingsModal } from './src/components/SettingsModal';
 import { Tag } from './src/components/ui';
 import { RADIUS_NM } from './src/config';
+import { airportsNear } from './src/lib/airports';
+import { loadDailyLog, pruneOldDailyLogs, recordEntries, saveDailyLog } from './src/lib/dailyLog';
 import { rareLabel } from './src/lib/military';
+import { shareAircraft } from './src/lib/share';
+import { useWeatherTiles } from './src/lib/useWeather';
 import { applyFilters, buildRows, Row } from './src/lib/rows';
 import { DEFAULT_SETTINGS, loadSettings, loadStation, saveSettings, saveStation } from './src/lib/storage';
 import { describeSquawk, isEmergencySquawk } from './src/lib/squawk';
@@ -34,6 +39,10 @@ function Radar() {
   const [editingLocation, setEditingLocation] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showList, setShowList] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [followHex, setFollowHex] = useState<string | null>(null);
+  const followLostAt = useRef(0);
+  const dailyLog = useRef<Awaited<ReturnType<typeof loadDailyLog>> | null>(null);
   const [selectedHex, setSelectedHex] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
   const snapshot = useRef<Row | null>(null);
@@ -45,10 +54,21 @@ function Radar() {
     (async () => {
       setSettings(await loadSettings());
       setStation(await loadStation());
+      await pruneOldDailyLogs();
+      dailyLog.current = await loadDailyLog();
     })();
   }, []);
 
   const { aircraft, status, updatedAt } = useRadar(station ?? null);
+  const weatherTiles = useWeatherTiles(settings.showWeather);
+  const airports = useMemo(() => (station && settings.showAirports ? airportsNear(station.lat, station.lon, RADIUS_NM * 3) : []), [station, settings.showAirports]);
+
+  // Daily log of notable (military / alert-squawk) traffic, fed to the AI daily summary.
+  useEffect(() => {
+    if (!dailyLog.current) return;
+    const next = recordEntries(aircraft, dailyLog.current);
+    if (next) { dailyLog.current = next; saveDailyLog(next); }
+  }, [aircraft]);
 
   const allRows = useMemo(() => (station ? buildRows(aircraft, station.lat, station.lon) : []), [aircraft, station]);
   const rows = useMemo(() => applyFilters(allRows, settings), [allRows, settings]);
@@ -58,6 +78,20 @@ function Radar() {
   if (selected) snapshot.current = selected;
   const sheetRow = selectedHex ? selected ?? (snapshot.current?.hex === selectedHex ? snapshot.current : null) : null;
   const nearest = rows[0];
+
+  // Follow mode: keep the camera on the followed aircraft; give up if the signal is gone for 60s.
+  useEffect(() => {
+    if (!followHex) return;
+    const live = allRows.find((r) => r.hex === followHex);
+    if (live) {
+      followLostAt.current = 0;
+      camera.current?.easeTo({ center: [live.lon as number, live.lat as number], duration: 1500 });
+    } else {
+      if (!followLostAt.current) followLostAt.current = Date.now();
+      if (Date.now() - followLostAt.current > 60000) stopFollow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRows, followHex]);
 
   const ringsGeoJSON = useMemo(
     () => ({
@@ -126,6 +160,13 @@ function Radar() {
     Haptics.selectionAsync().catch(() => {});
   }, []);
 
+  const startFollow = (hex: string) => { followLostAt.current = 0; setFollowHex(hex); };
+  const stopFollow = () => {
+    setFollowHex(null);
+    followLostAt.current = 0;
+    if (station) camera.current?.easeTo({ center: [station.lon, station.lat], zoom: START_ZOOM, duration: 500 });
+  };
+
   const recenter = useCallback((st: Station) => {
     camera.current?.easeTo({ center: [st.lon, st.lat], zoom: START_ZOOM, duration: 500 });
   }, []);
@@ -135,6 +176,7 @@ function Radar() {
     saveStation(s);
     setEditingLocation(false);
     setSelectedHex(null);
+    setFollowHex(null);
     alerted.current.clear();
     setTimeout(() => recenter(s), 100);
   };
@@ -164,6 +206,11 @@ function Radar() {
         onPress={() => setSelectedHex(null)}
       >
         <Camera ref={camera} initialViewState={{ center: [station.lon, station.lat], zoom: START_ZOOM }} maxZoom={14} />
+        {weatherTiles && (
+          <RasterSource id="weather" tiles={[weatherTiles]} tileSize={256} maxzoom={7}>
+            <Layer id="weather-layer" type="raster" paint={{ 'raster-opacity': 0.4 }} />
+          </RasterSource>
+        )}
         <GeoJSONSource id="rings" data={ringsGeoJSON}>
           <Layer
             id="rings-line"
@@ -181,6 +228,14 @@ function Radar() {
         <Marker id="station" lngLat={[station.lon, station.lat]} anchor="center">
           <View style={[s.station, { borderColor: theme.accent, backgroundColor: theme.bg }]} />
         </Marker>
+        {airports.map((a) => (
+          <Marker key={a.code} id={`apt-${a.code}`} lngLat={[a.lon, a.lat]} anchor="center">
+            <View style={{ alignItems: 'center' }} pointerEvents="none">
+              <Text style={{ fontSize: 13 }}>{a.mil ? '✈️' : '🛩️'}</Text>
+              <Text style={{ color: a.mil ? AMBER : theme.dim, fontSize: 9, fontWeight: '700' }}>{a.code}</Text>
+            </View>
+          </Marker>
+        ))}
         {drawRows.map((r) => (
           <PlaneMarker
             key={r.hex}
@@ -204,6 +259,7 @@ function Radar() {
         </View>
         <View style={{ flexDirection: 'row' }}>
           <RoundBtn glyph="☰" onPress={() => setShowList(true)} theme={theme} label="Aircraft list" />
+          <RoundBtn glyph="📰" onPress={() => setShowSummary(true)} theme={theme} label="Today's AI summary" />
           <RoundBtn glyph="📍" onPress={() => setEditingLocation(true)} theme={theme} label="Change location" />
           <RoundBtn glyph="⚙️" onPress={() => setShowSettings(true)} theme={theme} label="Settings" />
         </View>
@@ -218,6 +274,15 @@ function Radar() {
         </Pressable>
       )}
 
+      {followHex && (
+        <View style={[s.chip, { top: insets.top + (banner ? 108 : 58), backgroundColor: theme.card, borderColor: followLostAt.current ? ALERT : theme.accent }]}>
+          <Text style={{ color: followLostAt.current ? ALERT : theme.accent, fontWeight: '700', fontSize: 12 }}>
+            {followLostAt.current ? '🎯 Signal lost, holding position' : `🎯 Following ${(allRows.find((r) => r.hex === followHex)?.flight || '').trim() || followHex.toUpperCase()}`}
+          </Text>
+          <Pressable onPress={stopFollow} hitSlop={10}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 12, marginLeft: 14 }}>Stop</Text></Pressable>
+        </View>
+      )}
+
       <View pointerEvents="box-none" style={[s.bottom, { paddingBottom: insets.bottom + 8 }]}>
         {sheetRow ? (
           <DetailSheet
@@ -227,6 +292,9 @@ function Radar() {
             theme={theme}
             onClose={() => setSelectedHex(null)}
             maxHeight={height * 0.6}
+            following={followHex === sheetRow.hex}
+            onFollow={() => (followHex === sheetRow.hex ? stopFollow() : startFollow(sheetRow.hex))}
+            onShare={() => shareAircraft(sheetRow, settings, station)}
           />
         ) : (
           <Pressable
@@ -264,7 +332,8 @@ function Radar() {
       </View>
 
       <ListModal visible={showList} rows={rows} settings={settings} theme={theme} onPick={(h) => { setShowList(false); pick(h); }} onClose={() => setShowList(false)} />
-      <SettingsModal visible={showSettings} settings={settings} theme={theme} onChange={updateSettings} onClose={() => setShowSettings(false)} />
+      <SettingsModal visible={showSettings} settings={settings} theme={theme} onChange={updateSettings} onClose={() => setShowSettings(false)} station={station} />
+      <DailySummaryModal visible={showSummary} theme={theme} onClose={() => setShowSummary(false)} />
     </View>
   );
 }
@@ -290,6 +359,7 @@ const s = StyleSheet.create({
   pill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
   round: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   banner: { position: 'absolute', left: 12, right: 12, borderWidth: 1.5, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 },
+  chip: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: 20, paddingVertical: 7, paddingHorizontal: 14 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12 },
   nearest: { borderWidth: 1, borderRadius: 16, padding: 14 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },

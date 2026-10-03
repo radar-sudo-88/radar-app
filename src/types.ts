@@ -27,9 +27,16 @@ export interface Settings {
   theme: ThemeName;
   rareAlerts: boolean;
   milOnly: boolean;
+  showAirports: boolean;
+  showWeather: boolean;
+  shareLocation: boolean;
   filterOperator: string;
   filterType: string;
   filterSquawk: string;
+  filterAltMin: string;
+  filterAltMax: string;
+  filterSpeedMin: string;
+  filterSpeedMax: string;
 }
 
 export interface Station {
@@ -59,4 +66,22 @@ export interface RouteInfo {
   toCode: string;
   fromName: string;
   toName: string;
+  toLat?: number;
+  toLon?: number;
+}
+
+export interface DailyEntry {
+  hex: string;
+  t: string | null;
+  desc: string | null;
+  category: string | null;
+  operator: string | null;
+  squawk: string | null;
+  emergency: boolean;
+}
+
+export interface DailySummary {
+  headline?: string;
+  summary?: string;
+  highlights?: string[];
 }

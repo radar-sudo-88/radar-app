@@ -3,8 +3,9 @@ import { Settings, Station } from '../types';
 
 export const DEFAULT_SETTINGS: Settings = {
   speed: 'kts', alt: 'ft', dist: 'nm', theme: 'green',
-  rareAlerts: true, milOnly: false,
+  rareAlerts: true, milOnly: false, showAirports: true, showWeather: true, shareLocation: true,
   filterOperator: '', filterType: '', filterSquawk: '',
+  filterAltMin: '', filterAltMax: '', filterSpeedMin: '', filterSpeedMax: '',
 };
 
 const SETTINGS_KEY = 'radar.settings.v1';

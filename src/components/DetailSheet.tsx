@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Row } from '../lib/rows';
-import { fetchProfile, fetchRoute, ProfileResult } from '../lib/api';
+import { airlineLogoCandidates, fetchPhoto, fetchProfile, fetchRoute, ProfileResult } from '../lib/api';
+import { airportByCode } from '../lib/airports';
+import { distanceNM } from '../lib/geo';
 import { describeSquawk } from '../lib/squawk';
 import { fmtAlt, fmtDist, fmtRate, fmtSpeed } from '../lib/units';
 import { AMBER, ALERT, Theme } from '../theme';
@@ -19,6 +21,17 @@ interface Props {
   theme: Theme;
   onClose: () => void;
   maxHeight: number;
+  following: boolean;
+  onFollow: () => void;
+  onShare: () => void;
+}
+
+function fmtEta(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes < 0) return '--';
+  if (minutes < 1) return '<1 min';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h ? `${h}h ${m}m` : `${m} min`;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -29,7 +42,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   glider_or_balloon: 'Glider / balloon', unmanned: 'Unmanned', other: 'Other',
 };
 
-export function DetailSheet({ row, lost, settings, theme, onClose, maxHeight }: Props) {
+export function DetailSheet({ row, lost, settings, theme, onClose, maxHeight, following, onFollow, onShare }: Props) {
   const { hex } = row;
   const flight = (row.flight || '').trim();
   const [route, setRoute] = useState<RouteInfo | null | undefined>(routeCache.get(flight));
@@ -58,6 +71,24 @@ export function DetailSheet({ row, lost, settings, theme, onClose, maxHeight }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hex]);
 
+  const [photo, setPhoto] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPhoto(null);
+    fetchPhoto(row).then((u) => { if (live) setPhoto(u); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hex]);
+
+  const logos = airlineLogoCandidates(flight);
+  const [logoIdx, setLogoIdx] = useState(0);
+  useEffect(() => setLogoIdx(0), [flight]);
+
+  // ETA = great-circle distance to the destination airport / current ground speed (hidden if unknown).
+  const dest = route ? (route.toLat !== undefined && route.toLon !== undefined ? { lat: route.toLat, lon: route.toLon } : airportByCode(route.toCode)) : undefined;
+  const etaMin = dest && row.gs && row.gs > 30 && row.lat !== undefined && row.lon !== undefined
+    ? (distanceNM(row.lat, row.lon, dest.lat, dest.lon) / row.gs) * 60 : null;
+
   const sq = describeSquawk(row.squawk);
   const sqColor = sq?.kind === 'alert' ? ALERT : sq?.kind === 'notable' ? AMBER : theme.dim;
   const title = flight || row.r || hex.toUpperCase();
@@ -65,6 +96,9 @@ export function DetailSheet({ row, lost, settings, theme, onClose, maxHeight }: 
   return (
     <View style={[s.sheet, { backgroundColor: theme.card, borderColor: theme.border, maxHeight }]}>
       <View style={s.head}>
+        {logos[logoIdx] ? (
+          <Image source={{ uri: logos[logoIdx] }} style={s.logo} resizeMode="contain" onError={() => setLogoIdx((i) => i + 1)} />
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text style={[s.title, { color: row.color }]} numberOfLines={1}>{title}</Text>
           <Text style={{ color: theme.dim, fontSize: 12 }} numberOfLines={1}>
@@ -82,12 +116,22 @@ export function DetailSheet({ row, lost, settings, theme, onClose, maxHeight }: 
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+        <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+          <Pressable onPress={onFollow} style={[s.action, { borderColor: following ? theme.accent : theme.border, backgroundColor: following ? theme.accent : 'transparent' }]}>
+            <Text style={{ color: following ? theme.bg : theme.text, fontWeight: '600', fontSize: 13 }}>{following ? '🎯 Following' : '🎯 Follow'}</Text>
+          </Pressable>
+          <Pressable onPress={onShare} style={[s.action, { borderColor: theme.border }]}>
+            <Text style={{ color: theme.text, fontWeight: '600', fontSize: 13 }}>🔗 Share</Text>
+          </Pressable>
+        </View>
+        {photo ? <Image source={{ uri: photo }} style={s.photo} resizeMode="cover" /> : null}
         {flight ? (
           <View style={[s.box, { borderColor: theme.border }]}>
             {route ? (
               <>
                 <RouteRow label="From" code={route.fromCode} name={route.fromName} theme={theme} />
                 <RouteRow label="To" code={route.toCode} name={route.toName} theme={theme} />
+                {etaMin !== null && <RouteRow label="ETA" code="" name={fmtEta(etaMin)} theme={theme} />}
               </>
             ) : (
               <Text style={{ color: theme.dim, fontSize: 12 }}>{route === undefined ? 'Looking up route…' : 'No route on file for this callsign.'}</Text>
@@ -195,5 +239,8 @@ const s = StyleSheet.create({
   box: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginVertical: 4 },
   sec: { fontSize: 10, letterSpacing: 1.2, fontWeight: '700', textTransform: 'uppercase' },
+  logo: { width: 44, height: 44, borderRadius: 8, marginRight: 10, backgroundColor: 'rgba(255,255,255,0.9)' },
+  photo: { width: '100%', height: 150, borderRadius: 10, marginBottom: 8 },
+  action: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, marginRight: 8 },
   retry: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginTop: 8 },
 });
